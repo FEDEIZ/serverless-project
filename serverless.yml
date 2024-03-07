@@ -1,0 +1,174 @@
+service: myserverlessproject
+
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  profile: serverlessUser
+  region: us-east-1
+  environment:
+    tableName: ${self:custom.tableName}
+    bucketName: ${self:custom.bucketName}
+    tableNameWS: ${self:custom.tableNameWS}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+              - dynamodb:*
+              - s3:*
+              - ses:*
+          Resource: '*'
+
+
+plugins:
+  - serverless-s3-sync
+  - serverless-webpack
+  - serverless-add-api-key
+  - serverless-offline
+  - serverless-dynamodb-local
+
+package:
+  individually: true
+
+custom:
+  tableName: player-points-table
+  bucketName: myserverlessprojectuploadbucket-fedeiz
+  tableNameWS: WebsocketUsers
+  s3Sync:
+    - bucketName: ${self:custom.bucketName}
+      localDir: uploads
+  webpack:
+    webpackConfig: 'webpack.config.js'
+    includeModules: false 
+    packager: 'npm'
+  apiKeys:
+    - name: myFreeApiKey
+      usagePlan:
+        name: "free"
+        quota:
+          limit: 1000
+          period: MONTH
+        throttle:
+          rateLimit: 5
+          burstLimit: 20
+    - name: myPaidApiKey
+      usagePlan:
+        name: "paid"
+        quota:
+          limit: 10000
+          period: MONTH
+        throttle:
+          rateLimit: 5
+          burstLimit: 20
+
+functions:
+  getUser:
+    handler: lambdas/endpoints/getUser.handler
+    events:
+      - http:
+          path: get-user/{ID}
+          method: GET
+          cors: true
+          private: true
+  getPlayerScore:
+    handler: lambdas/endpoints/getPlayerScore.handler
+    events:
+      - http:
+          path: get-player-score/{ID}
+          method: GET
+          cors: true
+  createPlayerScore:
+    handler: lambdas/endpoints/createPlayerScore.handler
+    events:
+      - http:
+          path: create-player-score/{ID}
+          method: POST
+          cors: true
+  createFile:
+    handler: lambdas/endpoints/createFile.handler
+    events:
+      - http:
+          path: create-file/{fileName}
+          method: POST
+          cors: true
+  getFile:
+    handler: lambdas/endpoints/getFile.handler
+    events:
+      - http:
+          path: get-file/{fileName}
+          method: GET
+          cors: true
+  sendEmail:
+    handler: lambdas/endpoints/sendEmail.handler
+    events:
+      - http:
+          path: send-email
+          method: POST
+          cors: true
+  
+  websocket-connect:
+    handler: lambdas/websockets/connect.handler
+    events:
+      - websocket:
+          route: $connect
+  websocket-disconnect:
+    handler: lambdas/websockets/disconnect.handler
+    events:
+      - websocket:
+          route: $disconnect
+  websocket-default:
+    handler: lambdas/websockets/default.handler
+    events:
+      - websocket:
+          route: $default
+  websocket-message:
+    handler: lambdas/websockets/message.handler
+    events:
+      - websocket:
+          route: message
+
+  proxy:
+    handler: lambdas/endpoints/proxy.handler
+    events:
+        - http:
+              path: fedeiz/{proxy+}
+              method: ANY
+              integration: http-proxy
+              request:
+                  uri: http://api.icndb.com/{proxy}
+                  parameters:
+                      paths:
+                          proxy: true
+          
+
+resources:
+  Resources:
+    DemoBucketUpload:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.bucketName}
+    MyDynamoDbTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.tableName}
+        AttributeDefinitions:
+          - AttributeName: ID
+            AttributeType: S
+        KeySchema:
+          - AttributeName: ID
+            KeyType : HASH
+        BillingMode: PAY_PER_REQUEST
+    WebsocketUserTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.tableNameWS}
+        AttributeDefinitions:
+          - AttributeName: ID
+            AttributeType: S
+        KeySchema:
+          - AttributeName: ID
+            KeyType : HASH
+        BillingMode: PAY_PER_REQUEST
+          
